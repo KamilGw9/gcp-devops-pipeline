@@ -1,0 +1,50 @@
+name: Build and Deploy to GKE
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  PROJECT_ID: gcp-devops-pipelien-kamil
+  REGION: europe-central2
+  CLUSTER_NAME: devops-cluster
+  REPOSITORY: docker-repo
+  IMAGE: data-pipeline-api
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Google Auth
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Configure Docker
+      run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+    - name: Build Docker image
+      run: |
+        docker build -t ${{ env. REGION }}-docker.pkg. dev/${{ env. PROJECT_ID }}/${{ env. REPOSITORY }}/${{ env.IMAGE }}:${{ github. sha }} ./app
+
+    - name: Push Docker image
+      run: |
+        docker push ${{ env. REGION }}-docker. pkg.dev/${{ env.PROJECT_ID }}/${{ env. REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}
+
+    - name: Get GKE credentials
+      uses: google-github-actions/get-gke-credentials@v2
+      with:
+        cluster_name: ${{ env.CLUSTER_NAME }}
+        location: ${{ env. REGION }}-a
+
+    - name: Deploy to GKE
+      run: |
+        kubectl set image deployment/data-pipeline-api data-pipeline-api=${{ env. REGION }}-docker. pkg.dev/${{ env.PROJECT_ID }}/${{ env. REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}
