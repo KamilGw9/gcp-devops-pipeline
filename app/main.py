@@ -32,7 +32,7 @@ def transform():
     data = request.get_json()
     
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return jsonify({"error": "No data provided at now"}), 400
     
     # TRANSFORM: uppercase name, convert age to int
     transformed = {
