@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-pipeline-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: data-pipeline-api
+  template:
+    metadata:
+      labels:
+        app: data-pipeline-api
+    spec:
+      containers:
+      - name: data-pipeline-api
+        image: europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:v1
+        ports:
+        - containerPort: 8080
+        env:
+        - name: APP_VERSION
+          value: "1.0. 0"
+        - name: ENVIRONMENT
+          value: "production"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-pipeline-api
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 8080
+  selector:
+    app: data-pipeline-api
