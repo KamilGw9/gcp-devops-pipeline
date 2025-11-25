@@ -1,3 +1,24 @@
 # Terraform
 terraform/.terraform/
-terraform/.tfstate
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/*.tfvars
+!terraform/terraform.tfvars.example
+
+# Python
+app/__pycache__/
+app/*.pyc
+app/.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets - NIGDY nie commituj!
+*.pem
+*.key
+*credentials*.json
