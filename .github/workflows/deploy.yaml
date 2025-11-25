@@ -29,22 +29,19 @@ jobs:
       uses: google-github-actions/setup-gcloud@v2
 
     - name: Configure Docker
-      run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+      run: gcloud auth configure-docker europe-central2-docker.pkg.dev --quiet
 
     - name: Build Docker image
-      run: |
-        docker build -t ${{ env. REGION }}-docker.pkg. dev/${{ env. PROJECT_ID }}/${{ env. REPOSITORY }}/${{ env.IMAGE }}:${{ github. sha }} ./app
+      run: docker build -t europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:${{ github. sha }} ./app
 
     - name: Push Docker image
-      run: |
-        docker push ${{ env. REGION }}-docker. pkg.dev/${{ env.PROJECT_ID }}/${{ env. REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}
+      run: docker push europe-central2-docker. pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:${{ github.sha }}
 
     - name: Get GKE credentials
       uses: google-github-actions/get-gke-credentials@v2
       with:
-        cluster_name: ${{ env.CLUSTER_NAME }}
-        location: ${{ env. REGION }}-a
+        cluster_name: devops-cluster
+        location: europe-central2-a
 
     - name: Deploy to GKE
-      run: |
-        kubectl set image deployment/data-pipeline-api data-pipeline-api=${{ env. REGION }}-docker. pkg.dev/${{ env.PROJECT_ID }}/${{ env. REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}
+      run: kubectl set image deployment/data-pipeline-api data-pipeline-api=europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:${{ github.sha }}
