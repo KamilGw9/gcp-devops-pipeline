@@ -35,7 +35,7 @@ jobs:
       run: docker build -t europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:${{ github.sha }} ./app
 
     - name: Push Docker image
-      run: docker push europe-central2-docker. pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:${{ github.sha }}
+      run: docker push europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:${{ github.sha }}
 
     - name: Get GKE credentials
       uses: google-github-actions/get-gke-credentials@v2
