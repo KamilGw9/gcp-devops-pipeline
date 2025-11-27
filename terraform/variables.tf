@@ -1,40 +1,34 @@
-# terraform/variables.tf
-
-# === PODSTAWOWE ===
-
 variable "project_id" {
-  description = "ID projektu w Google Cloud"
+  description = "GCP project ID"
   type        = string
 }
 
 variable "region" {
-  description = "Region GCP gdzie tworzymy zasoby"
+  description = "GCP region for resources"
   type        = string
-  default     = "europe-central2"  # Warszawa - najbliżej nas!
+  default     = "europe-central2"
 }
 
 variable "zone" {
-  description = "Strefa w regionie (a, b, lub c)"
+  description = "GCP zone within the region"
   type        = string
   default     = "europe-central2-a"
 }
 
-# === KUBERNETES (GKE) ===
-
 variable "cluster_name" {
-  description = "Nazwa klastra Kubernetes"
+  description = "Name of the GKE cluster"
   type        = string
   default     = "devops-cluster"
 }
 
 variable "node_count" {
-  description = "Liczba nodów (serwerów) w klastrze"
+  description = "Number of nodes in the cluster"
   type        = number
-  default     = 2  # 2 nody = dobry balans cena/wydajność
+  default     = 2
 }
 
 variable "machine_type" {
-  description = "Typ maszyny dla nodów"
+  description = "Machine type for cluster nodes"
   type        = string
-  default     = "e2-medium"  # 2 vCPU, 4GB RAM - tani ale wystarczający
+  default     = "e2-medium"
 }

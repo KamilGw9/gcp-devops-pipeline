@@ -1,38 +1,36 @@
-# terraform/outputs.tf
-
-# === KLASTER KUBERNETES ===
+# GKE Cluster outputs
 
 output "cluster_name" {
-  description = "Nazwa klastra GKE"
+  description = "GKE cluster name"
   value       = google_container_cluster.primary.name
 }
 
 output "cluster_endpoint" {
-  description = "Endpoint klastra (adres API Kubernetes)"
+  description = "GKE cluster API endpoint"
   value       = google_container_cluster.primary.endpoint
-  sensitive   = true  # Ukryj w logach (bezpieczeństwo)
+  sensitive   = true
 }
 
 output "cluster_location" {
-  description = "Lokalizacja klastra"
+  description = "GKE cluster location"
   value       = google_container_cluster.primary.location
 }
 
-# === SIEĆ ===
+# Network outputs
 
 output "vpc_name" {
-  description = "Nazwa sieci VPC"
+  description = "VPC network name"
   value       = google_compute_network.vpc.name
 }
 
 output "subnet_name" {
-  description = "Nazwa subnetu"
+  description = "Subnet name"
   value       = google_compute_subnetwork.subnet.name
 }
 
-# === ARTIFACT REGISTRY ===
+# Artifact Registry outputs
 
 output "docker_repo_url" {
-  description = "URL do Artifact Registry (tu pushujemy obrazy Docker)"
+  description = "Artifact Registry URL for Docker images"
   value       = "${var.region}-docker.pkg.dev/${var.project_id}/docker-repo"
 }
