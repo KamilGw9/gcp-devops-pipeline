@@ -43,5 +43,29 @@ jobs:
         cluster_name: devops-cluster
         location: europe-central2-a
 
+    - name: Install Helm
+      run: |
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+    - name: Deploy Prometheus with Helm
+      run: |
+        helm upgrade --install prometheus ./helm/prometheus \
+          --namespace monitoring \
+          --create-namespace \
+          --values ./helm/prometheus/values.yaml
+
+    - name: Deploy Grafana with Helm
+      run: |
+        helm upgrade --install grafana ./helm/grafana \
+          --namespace monitoring \
+          --create-namespace \
+          --set adminPassword="${{ secrets.GRAFANA_PASSWORD }}" \
+          --values ./helm/grafana/values.yaml
+
+    - name: Verify monitoring deployment
+      run: |
+        kubectl get pods -n monitoring
+        kubectl get svc -n monitoring
+
     - name: Deploy to GKE
       run: kubectl set image deployment/data-pipeline-api data-pipeline-api=europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:${{ github.sha }}

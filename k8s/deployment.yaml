@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: data-pipeline-api
+  labels:
+    app: data-pipeline-api
 spec:
   replicas: 2
   selector:
@@ -11,6 +13,10 @@ spec:
     metadata:
       labels:
         app: data-pipeline-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
       - name: data-pipeline-api
