@@ -1,9 +1,9 @@
 replicaCount: 1
 
 image:
-repository: prom/prometheus
-tag: "v2.50.0"
-pullPolicy: IfNotPresent
+  repository: prom/prometheus
+  tag: "v2.50.0"
+  pullPolicy: IfNotPresent
 
 service:
   type: LoadBalancer
@@ -22,3 +22,6 @@ retention: "30d"
 
 fullnameOverride: ""
 nameOverride: "prometheus"
+
+nameOverride: ""
+fullnameOverride: ""
