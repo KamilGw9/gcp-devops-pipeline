@@ -1,0 +1,35 @@
+replicaCount: 1
+
+image:
+  repository: grafana/grafana
+  tag: "10.2.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: LoadBalancer
+  port: 3000
+  targetPort: 3000
+
+adminUser: admin
+
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "100m"
+  limits:
+    memory: "512Mi"
+    cpu: "200m"
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    url: http://prometheus:9090
+    access: proxy
+    isDefault: true
+
+persistence:
+  enabled: true
+  size: 5Gi
+
+nameOverride: ""
+fullnameOverride: ""

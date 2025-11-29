@@ -1,0 +1,11 @@
+apiVersion: v2
+name: grafana
+description: Grafana visualization platform
+type: application
+version: 1.0.0
+appVersion: "10.2.0"
+keywords:
+  - grafana
+  - visualization
+  - dashboards
+home: https://grafana.com
