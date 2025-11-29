@@ -6,8 +6,11 @@
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=for-the-badge&logo=kubernetes&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)
+![Helm](https://img.shields.io/badge/Helm-0F1689?style=for-the-badge&logo=helm&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-F46800?style=for-the-badge&logo=grafana&logoColor=white)
 
-A production-ready DevOps pipeline demonstrating modern cloud-native practices on Google Cloud Platform. This project showcases Infrastructure as Code, containerization, orchestration, and CI/CD automation.
+A production-ready DevOps pipeline demonstrating modern cloud-native practices on Google Cloud Platform. This project showcases Infrastructure as Code, containerization, orchestration, monitoring, and CI/CD automation.
 
 ---
 
@@ -16,6 +19,7 @@ A production-ready DevOps pipeline demonstrating modern cloud-native practices o
 - [Tech Stack](#-tech-stack)
 - [Project Structure](#-project-structure)
 - [API Endpoints](#-api-endpoints)
+- [Monitoring](#-monitoring)
 - [Quick Start](#-quick-start)
 - [GitFlow Workflow](#-gitflow-workflow)
 - [CI/CD Pipeline](#-cicd-pipeline)
@@ -33,6 +37,8 @@ A production-ready DevOps pipeline demonstrating modern cloud-native practices o
 | 🐍 **App** | Python 3.10, Flask |
 | 🐳 **Containerization** | Docker |
 | ☸️ **Orchestration** | Kubernetes |
+| 📦 **Package Manager** | Helm |
+| 📊 **Monitoring** | Prometheus, Grafana |
 | 🔄 **CI/CD** | GitHub Actions |
 | 📝 **Version Control** | Git with GitFlow |
 
@@ -53,9 +59,12 @@ A production-ready DevOps pipeline demonstrating modern cloud-native practices o
 │   └── providers.tf
 ├── k8s/                  # Kubernetes manifests
 │   └── deployment.yaml
-├── helm/                 # Helm charts (future)
+├── helm/                 # Helm charts
+│   ├── prometheus/       # Prometheus monitoring
+│   └── grafana/          # Grafana dashboards
 └── .github/workflows/    # CI/CD pipelines
-    └── ci.yml
+    ├── ci.yml            # Continuous Integration
+    └── deploy.yaml       # Continuous Deployment
 ```
 
 ---
@@ -68,6 +77,7 @@ The Data Pipeline API provides the following endpoints:
 |--------|----------|-------------|
 | `GET` | `/` | Returns API info and available endpoints |
 | `GET` | `/health` | Health check for monitoring and load balancers |
+| `GET` | `/metrics` | Prometheus metrics endpoint |
 | `POST` | `/api/transform` | Transforms incoming data (ETL operations) |
 | `GET` | `/api/stats` | Returns statistics for processed records |
 
@@ -97,6 +107,43 @@ curl http://localhost:8080/api/stats
 
 ---
 
+## 📊 Monitoring
+
+This project includes a complete monitoring stack with Prometheus and Grafana.
+
+### Components
+
+| Component | Purpose |
+|-----------|---------|
+| **Prometheus** | Metrics collection and storage |
+| **Grafana** | Visualization and dashboards |
+
+### Application Metrics
+
+The application exposes the following Prometheus metrics:
+
+- `app_requests_total` - Total number of requests
+- `app_request_duration_seconds` - Request duration
+- `app_transform_operations_total` - Number of data transformation operations
+
+### Deployment
+
+```bash
+# Deploy Prometheus
+helm install prometheus ./helm/prometheus \
+  --namespace monitoring \
+  --create-namespace
+
+# Deploy Grafana
+helm install grafana ./helm/grafana \
+  --namespace monitoring \
+  --set adminPassword="YOUR_PASSWORD"
+```
+
+📖 For detailed monitoring documentation, see [MONITORING.md](MONITORING.md)
+
+---
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -106,6 +153,7 @@ curl http://localhost:8080/api/stats
 - [Terraform](https://www.terraform.io/downloads) >= 1.0.0
 - [Docker](https://docs.docker.com/get-docker/) installed
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) installed
+- [Helm](https://helm.sh/docs/intro/install/) installed
 
 ### Infrastructure Deployment
 
@@ -152,6 +200,12 @@ curl http://localhost:8080/api/stats
 4. **Deploy to Kubernetes:**
    ```bash
    kubectl apply -f k8s/deployment.yaml
+   ```
+
+5. **Deploy Monitoring Stack:**
+   ```bash
+   helm install prometheus ./helm/prometheus --namespace monitoring --create-namespace
+   helm install grafana ./helm/grafana --namespace monitoring
    ```
 
 ### Local Development
@@ -206,22 +260,30 @@ This project follows the GitFlow branching strategy:
 
 ## 🔄 CI/CD Pipeline
 
-The GitHub Actions workflow (`.github/workflows/ci.yml`) automates the following:
+The project uses GitHub Actions for automated CI/CD with two workflows:
 
-### Triggers
+### CI Workflow (`.github/workflows/ci.yml`)
+
+**Triggers:**
 - **Push** to `main`, `develop`, and `feature/*` branches
 - **Pull Requests** to `main` and `develop` branches
 
-### Pipeline Steps
-
+**Steps:**
 1. **Checkout Code** - Fetches the latest code from the repository
 2. **Setup Python** - Configures Python 3.10 environment
 3. **Install Dependencies** - Installs required Python packages
 4. **Run Tests** - Executes pytest with verbose output
 
-### Pipeline Status
+### Deploy Workflow (`.github/workflows/deploy.yaml`)
 
-Tests run automatically on every push and pull request to ensure code quality and prevent regressions.
+**Triggers:**
+- Push to `main` branch
+
+**Steps:**
+1. **Build Docker Image** - Creates container image
+2. **Push to Artifact Registry** - Uploads image to GCP
+3. **Deploy to GKE** - Updates Kubernetes deployment
+4. **Deploy Monitoring** - Installs/updates Prometheus and Grafana via Helm
 
 ---
 
