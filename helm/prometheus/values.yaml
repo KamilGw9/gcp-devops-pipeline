@@ -20,8 +20,5 @@ resources:
 
 retention: "30d"
 
-fullnameOverride: ""
-nameOverride: "prometheus"
-
 nameOverride: ""
 fullnameOverride: ""

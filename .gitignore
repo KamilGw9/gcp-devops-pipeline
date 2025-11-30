@@ -23,3 +23,7 @@ Thumbs.db
 *.key
 *credentials*.json
 .env
+
+scripts/*.sh
+QUICK_START.md
+OPERATIONS.md
