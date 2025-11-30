@@ -9,9 +9,13 @@ This module provides REST API endpoints for:
 from flask import Flask, jsonify, request
 import os
 from datetime import datetime
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 app = Flask(__name__)
 
+requests_total = Counter('app_requests_total', 'Total requests', ['method', 'endpoint'])
+request_duration = Histogram('app_request_duration_seconds', 'Request duration')
+transform_operations = Counter('app_transform_operations_total', 'Transform operations')
 processed_records = []
 
 @app.route('/')
@@ -30,6 +34,12 @@ def health():
         "status": "healthy",
         "timestamp": datetime.now().isoformat()
     })
+
+@app.route('/metrics')
+def metrics():
+    """Endpoint dla Prometheus"""
+    return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
+
 
 @app.route('/api/transform', methods=['POST'])
 def transform():
