@@ -9,6 +9,11 @@ spec:
   selector:
     matchLabels:
       app: data-pipeline-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
   template:
     metadata:
       labels:
@@ -20,7 +25,8 @@ spec:
     spec:
       containers:
       - name: data-pipeline-api
-        image: europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:v1.0.0
+        image: europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 8080
         env:
