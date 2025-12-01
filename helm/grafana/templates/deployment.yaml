@@ -16,6 +16,10 @@ spec:
         app: grafana
     spec:
       serviceAccountName: {{ include "grafana.fullname" . }}
+      securityContext:
+        runAsUser: 472
+        runAsGroup: 472
+        fsGroup: 472
       containers:
       - name: grafana
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -40,7 +44,7 @@ spec:
         - name: datasources
           mountPath: /etc/grafana/provisioning/datasources
         resources:
-          {{- toYaml .Values.resources | nindent 10 }}
+          {{- toYaml .Values.resources | nindent 12 }}
         livenessProbe:
           httpGet:
             path: /api/health

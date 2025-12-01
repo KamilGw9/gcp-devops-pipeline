@@ -32,10 +32,14 @@ jobs:
       run: gcloud auth configure-docker europe-central2-docker.pkg.dev --quiet
 
     - name: Build Docker image
-      run: docker build -t europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:${{ github.sha }} ./app
+      run: |
+        docker build -t europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:${{ github.sha }} ./app
+        docker tag europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:${{ github.sha }} europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:latest
 
     - name: Push Docker image
-      run: docker push europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:${{ github.sha }}
+      run: |
+        docker push europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:${{ github.sha }}
+        docker push europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:latest
 
     - name: Get GKE credentials
       uses: google-github-actions/get-gke-credentials@v2
@@ -70,7 +74,7 @@ jobs:
     - name: Deploy to GKE
       run: |
         kubectl set image deployment/data-pipeline-api \
-          data-pipeline-api=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }} \
+          data-pipeline-api=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest \
           -n default
         
         kubectl rollout status deployment/data-pipeline-api -n default --timeout=5m
