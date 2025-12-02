@@ -4,11 +4,17 @@ metadata:
   name: crypto-tracker-ingress
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
   ingressClassName: nginx
+  tls:
+  - hosts:
+    - 34-116-189-129.nip.io
+    secretName: crypto-tracker-tls
   rules:
-  - http:
+  - host: 34-116-189-129.nip.io
+    http:
       paths:
       - path: /
         pathType: Prefix
