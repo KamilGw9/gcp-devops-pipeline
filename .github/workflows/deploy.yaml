@@ -50,21 +50,17 @@ jobs:
     - name: Install Helm
       run: |
         curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-    - name: Deploy Prometheus with Helm
+   
+    - name: Deploy Monitoring Stack
       run: |
-        helm upgrade --install prometheus ./helm/prometheus \
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        helm repo update
+        
+        helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
           --namespace monitoring \
           --create-namespace \
-          --values ./helm/prometheus/values.yaml
-
-    - name: Deploy Grafana with Helm
-      run: |
-        helm upgrade --install grafana ./helm/grafana \
-          --namespace monitoring \
-          --create-namespace \
-          --set adminPassword="${{ secrets.GRAFANA_PASSWORD }}" \
-          --values ./helm/grafana/values.yaml
+          --set grafana.adminPassword="${{ secrets.GRAFANA_PASSWORD }}" \
+          --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false
 
     - name: Verify monitoring deployment
       run: |
