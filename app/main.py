@@ -5,8 +5,29 @@ import os
 from datetime import datetime
 import requests
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+import json
+import redis
 
 app = Flask(__name__)
+
+# redis config
+redis_host = os.getenv('REDIS_HOST', 'redis-master')
+redis_port = int(os.getenv('REDIS_PORT', 6379))
+redis_password = os.getenv('REDIS_PASSWORD', '')
+
+try:
+    cache = redis.Redis(
+        host=redis_host,
+        port=redis_port,
+        password=redis_password,
+        decode_responses=True,
+        socket_timeout=2
+    )
+    cache.ping()
+    print(f"Connected to Redis"{redis_host})
+except redis.RedisError as e:
+    print(f"Redis connection error: {e}")
+    cache = None
 
 # Prometheus metrics
 requests_total = Counter('app_requests_total', 'Total requests', ['method', 'endpoint'])
@@ -60,11 +81,54 @@ def get_coin_price(coin):
     """Get current price for a specific cryptocurrency."""
     requests_total.labels(method='GET', endpoint='/api/crypto').inc()
     
+    coin_lower = coin.lower()
+    cache_key = f"price_{coin_lower}"
+
+    if cache:
+        try:
+            cached_data = cache.get(cache_key)
+            if cached_data:
+                print(f"🎯 Cache HIT dla {coin_lower}")
+                return jsonify(json.loads(cached_data))
+        except redis.RedisError as e:
+            print(f"Redis error: {e}")
+
     try:
+        response = requests.get(
+            f"{COINGECKO_API}/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "order": "market_cap_desc",
+                "per_page": 10,
+                "page": 1,
+                "sparkline": "false"
+            },
+            timeout=10
+        )
+        data = response.json()
+
+        coins = []
+        for coin in data:
+            coins.append({
+                "rank": coin.get("market_cap_rank"),
+                "name": coin.get("name"),
+                "symbol": coin.get("symbol").upper(),
+                "price_usd": coin.get("current_price"),
+                "change_24h": round(coin.get("price_change_percentage_24h", 0), 2),
+                "market_cap": coin.get("market_cap")
+            })
+        
+        result = {
+            "top_10": coins,
+            "timestamp": datetime.now().isoformat(),
+            "source": "api"
+        }
+    try:
+        print(f"🌍 Cache MISS dla {coin_lower} - pobieranie z API...")
         response = requests.get(
             f"{COINGECKO_API}/simple/price",
             params={
-                "ids": coin.lower(),
+                "ids": coin_lower,
                 "vs_currencies": "usd,eur,pln",
                 "include_24hr_change": "true",
                 "include_market_cap": "true"
@@ -76,10 +140,10 @@ def get_coin_price(coin):
         if not data:
             return jsonify({"error": f"Coin '{coin}' not found"}), 404
         
-        coin_data = data.get(coin.lower(), {})
+        coin_data = data.get(coin_lower, {})
         
-        return jsonify({
-            "coin": coin.lower(),
+        result = {
+            "coin": coin_lower,
             "prices": {
                 "usd": coin_data.get("usd"),
                 "eur": coin_data.get("eur"),
@@ -87,8 +151,18 @@ def get_coin_price(coin):
             },
             "change_24h": coin_data.get("usd_24h_change"),
             "market_cap_usd": coin_data.get("usd_market_cap"),
-            "timestamp": datetime.now().isoformat()
-        })
+            "timestamp": datetime.now().isoformat(),
+            "source": "api" 
+        }
+
+        if cache:
+            try:
+                cache.setex(cache_key, 60, json.dumps(result))
+            except redis.RedisError as e:
+                print(f"Nie udało się zapisać do cache: {e}")
+
+        return jsonify(result)
+
     except requests.RequestException as e:
         return jsonify({"error": "Failed to fetch data", "details": str(e)}), 500
 
@@ -97,7 +171,17 @@ def get_coin_price(coin):
 def get_top_10():
     """Get top 10 cryptocurrencies by market cap."""
     requests_total.labels(method='GET', endpoint='/api/crypto/top10').inc()
+
+    cache_key = "market_top_10"
     
+    if cache:
+        try:
+            cached_data = cache.get(cache_key)
+            if cached_data:
+                return jsonify(json.loads(cached_data))
+        except redis.RedisError as e:
+            print(f"Redis error: {e}")  
+
     try:
         response = requests.get(
             f"{COINGECKO_API}/coins/markets",
