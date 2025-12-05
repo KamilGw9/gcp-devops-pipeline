@@ -25,7 +25,7 @@ spec:
     spec:
       containers:
       - name: data-pipeline-api
-        image: europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:latest
+        image: europe-central2-docker.pkg.dev/gcp-devops-pipeline-kamil/docker-repo/data-pipeline-api:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
@@ -46,6 +46,15 @@ spec:
           value: "1.0.0"
         - name: ENVIRONMENT
           value: "production"
+        - name: REDIS_HOST
+          value: "redis-master"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: password
         resources:
           requests:
             memory: "128Mi"
