@@ -25,7 +25,7 @@ spec:
     spec:
       containers:
       - name: data-pipeline-api
-        image: europe-central2-docker.pkg.dev/gcp-devops-pipeline-kamil/docker-repo/data-pipeline-api:latest
+        image: europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
