@@ -18,7 +18,8 @@ db_host = os.getenv('DB_HOST', 'postgres-postgresql')
 db_name = os.getenv('DB_NAME', 'postgres')
 
 # === conn string for SQLAlchemy ===
-app.config['SQLALCHEMY_DATABASE_URI'] = f"postgresql://{db_user}:{db_password}@{db_host}/{db_name}"
+default_db_uri = f"postgresql://{db_user}:{db_password}@{db_host}/{db_name}"
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', default_db_uri)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -43,12 +44,13 @@ class PortfolioAlert(db.Model):
     triggered = db.Column(db.Boolean, default=False)
 
 # === auto create tables if not exist ===
-with app.app_context():
-    try:
-        db.create_all()
-        print("Database tables created successfully.")
-    except Exception as e:
-        print(f"Error creating database tables: {e}")
+if os.getenv("SKIP_DB_INIT") != "true":
+    with app.app_context():
+        try:
+            db.create_all()
+            print("Database tables created successfully.")
+        except Exception as e:
+            print(f"Error creating database tables: {e}")
 
 # === redis config (caching only)===
 redis_host = os.getenv('REDIS_HOST', 'redis-master')
@@ -114,6 +116,50 @@ def health():
 def metrics():
     """Prometheus metrics endpoint."""
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
+
+@app.route('/api/crypto/top10')
+def get_top10():
+    """Get top 10 cryptocurrencies by market cap."""
+    cache_key = "market_top_10"
+    
+    if cache:
+        try:
+            cached_data = cache.get(cache_key)
+            if cached_data:
+                return jsonify(json.loads(cached_data))
+        except redis.RedisError:
+            pass
+            
+    try:
+        response = requests.get(
+            f"{COINGECKO_API}/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "order": "market_cap_desc",
+                "per_page": 10,
+                "page": 1,
+                "sparkline": "false"
+            },
+            timeout=10
+        )
+        data = response.json()
+        
+        result = {
+            "top_10": data,
+            "timestamp": datetime.now().isoformat(),
+            "source": "api"
+        }
+        
+        if cache:
+            try:
+                cache.setex(cache_key, 300, json.dumps(result))
+            except redis.RedisError:
+                pass
+                
+        return jsonify(result)
+    except requests.RequestException as e:
+        return jsonify({"error": "Failed to fetch top 10", "details": str(e)}), 500
+
 
 @app.route('/api/crypto/<coin>')
 def get_coin_price(coin):

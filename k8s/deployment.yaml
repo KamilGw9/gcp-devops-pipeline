@@ -55,15 +55,8 @@ spec:
             secretKeyRef:
               name: redis-secret
               key: password
-        - name: DATABASE_URL
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: database-url
         - name: DB_HOST
-          value: "postgres"
-        - name: DB_PORT
-          value: "5432"
+          value: "postgres-postgresql"
         - name: DB_USER
           valueFrom:
             secretKeyRef:
@@ -75,7 +68,7 @@ spec:
               name: postgres-secret
               key: password
         - name: DB_NAME
-          value: "cryptotracker"
+          value: "postgres"
         resources:
           requests:
             memory: "128Mi"
