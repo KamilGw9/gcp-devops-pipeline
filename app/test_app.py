@@ -1,13 +1,27 @@
 """Tests for Crypto Tracker API."""
 import pytest
-from main import app
+import os
+
+# Set env var to skip DB init during import
+os.environ["SKIP_DB_INIT"] = "true"
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+
+from main import app, db
 
 
 @pytest.fixture
 def client():
     app.config['TESTING'] = True
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
+    
+    with app.app_context():
+        db.create_all()
+        
     with app.test_client() as client:
         yield client
+        
+    with app.app_context():
+        db.drop_all()
 
 
 def test_home(client):
