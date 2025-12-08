@@ -6,7 +6,7 @@ on:
       - main
 
 env:
-  PROJECT_ID: gcp-devops-pipeline-kamil
+  PROJECT_ID: gcp-devops-pipelien-kamil
   REGION: europe-central2
   CLUSTER_NAME: devops-cluster
   REPOSITORY: docker-repo
@@ -33,13 +33,13 @@ jobs:
 
     - name: Build Docker image
       run: |
-        docker build -t europe-central2-docker.pkg.dev/gcp-devops-pipeline-kamil/docker-repo/data-pipeline-api:${{ github.sha }} ./app
-        docker tag europe-central2-docker.pkg.dev/gcp-devops-pipeline-kamil/docker-repo/data-pipeline-api:${{ github.sha }} europe-central2-docker.pkg.dev/gcp-devops-pipeline-kamil/docker-repo/data-pipeline-api:latest
+        docker build -t europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:${{ github.sha }} ./app
+        docker tag europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:${{ github.sha }} europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:latest
 
     - name: Push Docker image
       run: |
-        docker push europe-central2-docker.pkg.dev/gcp-devops-pipeline-kamil/docker-repo/data-pipeline-api:${{ github.sha }}
-        docker push europe-central2-docker.pkg.dev/gcp-devops-pipeline-kamil/docker-repo/data-pipeline-api:latest
+        docker push europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:${{ github.sha }}
+        docker push europe-central2-docker.pkg.dev/gcp-devops-pipelien-kamil/docker-repo/data-pipeline-api:latest
 
     - name: Get GKE credentials
       uses: google-github-actions/get-gke-credentials@v2
