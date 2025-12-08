@@ -6,7 +6,7 @@ on:
       - main
 
 env:
-  PROJECT_ID: gcp-devops-pipelien-kamil
+  PROJECT_ID: gcp-devops-pipeline-kamil
   REGION: europe-central2
   CLUSTER_NAME: devops-cluster
   REPOSITORY: docker-repo

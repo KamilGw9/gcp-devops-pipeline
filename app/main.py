@@ -1,16 +1,58 @@
 """Crypto Tracker API - Real-time cryptocurrency prices and portfolio tracking."""
 
-from flask import Flask, jsonify, request
-import os
-from datetime import datetime
-import requests
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 import json
 import redis
+import os
+import requests
+from flask import Flask, jsonify, request
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 app = Flask(__name__)
 
-# redis config
+# === Database configuration ===
+db_user = os.getenv('DB_USER', 'postgres')
+db_password = os.getenv('DB_PASSWORD', 'postgres')
+db_host = os.getenv('DB_HOST', 'postgres-postgresql')
+db_name = os.getenv('DB_NAME', 'postgres')
+
+# === conn string for SQLAlchemy ===
+default_db_uri = f"postgresql://{db_user}:{db_password}@{db_host}/{db_name}"
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', default_db_uri)
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db = SQLAlchemy(app)
+
+class PortfolioItem(db.Model):
+    """Model for portfolio items."""
+    __tablename__ = 'portfolio'
+    id = db.Column(db.Integer, primary_key=True)
+    coin = db.Column(db.String(20), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    buy_price = db.Column(db.Float, nullable=True)
+    added_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class PortfolioAlert(db.Model):
+    """Model for portfolio alerts."""
+    __tablename__ = 'alerts'
+    id = db.Column(db.Integer, primary_key=True)
+    coin = db.Column(db.String(20), nullable=False)
+    target_price = db.Column(db.Float, nullable=False)
+    direction = db.Column(db.String(10), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    triggered = db.Column(db.Boolean, default=False)
+
+# === auto create tables if not exist ===
+if os.getenv("SKIP_DB_INIT") != "true":
+    with app.app_context():
+        try:
+            db.create_all()
+            print("Database tables created successfully.")
+        except Exception as e:
+            print(f"Error creating database tables: {e}")
+
+# === redis config (caching only)===
 redis_host = os.getenv('REDIS_HOST', 'redis-master')
 redis_port = int(os.getenv('REDIS_PORT', 6379))
 redis_password = os.getenv('REDIS_PASSWORD', '')
@@ -33,41 +75,41 @@ except redis.RedisError as e:
 requests_total = Counter('app_requests_total', 'Total requests', ['method', 'endpoint'])
 request_duration = Histogram('app_request_duration_seconds', 'Request duration')
 
-# In-memory storage (w prawdziwej apce: baza danych)
-alerts = []
-portfolio = {}
-
 # CoinGecko API base URL
 COINGECKO_API = "https://api.coingecko.com/api/v3"
 
-
 @app.route('/')
 def home():
-    """Return API information and available endpoints."""
+    """Return API information."""
     return jsonify({
-        "service": "Crypto Tracker API",
-        "version": os.getenv("APP_VERSION", "2.0.0"),
-        "endpoints": {
-            "GET /health": "Health check",
-            "GET /metrics": "Prometheus metrics",
-            "GET /api/crypto/<coin>": "Get price for specific coin (e.g., bitcoin, ethereum)",
-            "GET /api/crypto/top10": "Get top 10 cryptocurrencies",
-            "GET /api/crypto/compare?coins=btc,eth": "Compare multiple coins",
-            "POST /api/portfolio/add": "Add coin to portfolio",
-            "GET /api/portfolio": "View your portfolio with current values",
-            "POST /api/alerts": "Set price alert",
-            "GET /api/alerts": "View all alerts"
-        }
+        "service": "Crypto Tracker API (SQL Backend)",
+        "version": os.getenv("APP_VERSION", "2.1.0"),
+        "status": "active"
     })
 
 
 @app.route('/health')
 def health():
     """Health check endpoint."""
-    return jsonify({
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat()
-    })
+    status = {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+    try:
+        db.session.execute(db.text('SELECT 1'))
+        status["db"] = "connected"
+    except Exception as e:
+        status["db"] = f"error: {e}"
+        status["status"] = "unhealthy"
+
+    if cache:
+        try:
+            cache.ping()
+            status["redis"] = "connected"
+        except:
+            status["redis"] = "disconnected"
+    else:
+        status["redis"] = "disabled"
+
+    return jsonify(status)
 
 
 @app.route('/metrics')
@@ -75,10 +117,53 @@ def metrics():
     """Prometheus metrics endpoint."""
     return generate_latest(), 200, {'Content-Type': CONTENT_TYPE_LATEST}
 
+@app.route('/api/crypto/top10')
+def get_top10():
+    """Get top 10 cryptocurrencies by market cap."""
+    cache_key = "market_top_10"
+    
+    if cache:
+        try:
+            cached_data = cache.get(cache_key)
+            if cached_data:
+                return jsonify(json.loads(cached_data))
+        except redis.RedisError:
+            pass
+            
+    try:
+        response = requests.get(
+            f"{COINGECKO_API}/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "order": "market_cap_desc",
+                "per_page": 10,
+                "page": 1,
+                "sparkline": "false"
+            },
+            timeout=10
+        )
+        data = response.json()
+        
+        result = {
+            "top_10": data,
+            "timestamp": datetime.now().isoformat(),
+            "source": "api"
+        }
+        
+        if cache:
+            try:
+                cache.setex(cache_key, 300, json.dumps(result))
+            except redis.RedisError:
+                pass
+                
+        return jsonify(result)
+    except requests.RequestException as e:
+        return jsonify({"error": "Failed to fetch top 10", "details": str(e)}), 500
+
 
 @app.route('/api/crypto/<coin>')
 def get_coin_price(coin):
-    """Get current price for a specific cryptocurrency."""
+    """Get current price for a specific cryptocurrency (Uses Redis Cache)."""
     requests_total.labels(method='GET', endpoint='/api/crypto').inc()
     
     coin_lower = coin.lower()
@@ -88,13 +173,11 @@ def get_coin_price(coin):
         try:
             cached_data = cache.get(cache_key)
             if cached_data:
-                print(f"🎯 Cache HIT dla {coin_lower}")
                 return jsonify(json.loads(cached_data))
-        except redis.RedisError as e:
-            print(f"Redis error: {e}")
+        except redis.RedisError:
+            pass
 
     try:
-        print(f"🌍 Cache MISS dla {coin_lower} - pobieranie z API...")
         response = requests.get(
             f"{COINGECKO_API}/simple/price",
             params={
@@ -128,164 +211,67 @@ def get_coin_price(coin):
         if cache:
             try:
                 cache.setex(cache_key, 60, json.dumps(result))
-            except redis.RedisError as e:
-                print(f"Nie udało się zapisać do cache: {e}")
+            except redis.RedisError:
+                pass
 
         return jsonify(result)
 
-    except requests.RequestException as e:
-        return jsonify({"error": "Failed to fetch data", "details": str(e)}), 500
-
-
-@app.route('/api/crypto/top10')
-def get_top_10():
-    """Get top 10 cryptocurrencies by market cap."""
-    requests_total.labels(method='GET', endpoint='/api/crypto/top10').inc()
-
-    cache_key = "market_top_10"
-    
-    if cache:
-        try:
-            cached_data = cache.get(cache_key)
-            if cached_data:
-                return jsonify(json.loads(cached_data))
-        except redis.RedisError as e:
-            print(f"Redis error: {e}")  
-
-    try:
-        response = requests.get(
-            f"{COINGECKO_API}/coins/markets",
-            params={
-                "vs_currency": "usd",
-                "order": "market_cap_desc",
-                "per_page": 10,
-                "page": 1,
-                "sparkline": "false"
-            },
-            timeout=10
-        )
-        data = response.json()
-        
-        coins = []
-        for item in data:
-            coins.append({
-                "rank": item.get("market_cap_rank"),
-                "name": item.get("name"),
-                "symbol": item.get("symbol").upper(),
-                "price_usd": item.get("current_price"),
-                "change_24h": round(item.get("price_change_percentage_24h", 0), 2),
-                "market_cap": item.get("market_cap")
-            })
-        
-        result = {
-            "top_10": coins,
-            "timestamp": datetime.now().isoformat(),
-            "source": "api"
-        }
-        
-        if cache:
-            try:
-                cache.setex(cache_key, 300, json.dumps(result))
-            except redis.RedisError as e:
-                print(f"Nie udało się zapisać do cache: {e}")
-        
-        return jsonify(result)
-    except requests.RequestException as e:
-        return jsonify({"error": "Failed to fetch data", "details": str(e)}), 500
-
-
-@app.route('/api/crypto/compare')
-def compare_coins():
-    """Compare multiple cryptocurrencies."""
-    coins_param = request.args.get('coins', 'bitcoin,ethereum')
-    coin_ids = [c.strip().lower() for c in coins_param.split(',')]
-    
-    # Map common symbols to CoinGecko IDs
-    symbol_map = {
-        "btc": "bitcoin",
-        "eth": "ethereum", 
-        "sol": "solana",
-        "ada": "cardano",
-        "xrp": "ripple",
-        "doge": "dogecoin",
-        "dot": "polkadot",
-        "matic": "matic-network",
-        "link": "chainlink",
-        "ltc": "litecoin"
-    }
-    
-    coin_ids = [symbol_map.get(c, c) for c in coin_ids]
-    
-    try:
-        response = requests.get(
-            f"{COINGECKO_API}/simple/price",
-            params={
-                "ids": ",".join(coin_ids),
-                "vs_currencies": "usd,pln",
-                "include_24hr_change": "true"
-            },
-            timeout=10
-        )
-        data = response.json()
-        
-        comparison = []
-        for coin_id in coin_ids:
-            coin_data = data.get(coin_id, {})
-            if coin_data:
-                comparison.append({
-                    "coin": coin_id,
-                    "price_usd": coin_data.get("usd"),
-                    "price_pln": coin_data.get("pln"),
-                    "change_24h": round(coin_data.get("usd_24h_change", 0), 2)
-                })
-        
-        return jsonify({
-            "comparison": comparison,
-            "timestamp": datetime.now().isoformat()
-        })
     except requests.RequestException as e:
         return jsonify({"error": "Failed to fetch data", "details": str(e)}), 500
 
 
 @app.route('/api/portfolio/add', methods=['POST'])
 def add_to_portfolio():
-    """Add cryptocurrency to portfolio."""
+    """Add cryptocurrency to portfolio (PERSISTENT)."""
     data = request.get_json()
     
     if not data or 'coin' not in data or 'amount' not in data:
         return jsonify({"error": "Required: coin, amount"}), 400
     
     coin = data['coin'].lower()
-    amount = float(data['amount'])
-    buy_price = data.get('buy_price')  # Optional
+    try:
+        amount = float(data['amount'])
+        if amount <= 0:
+            return jsonify({"error": "Amount must be greater than 0"}), 400
+    except (ValueError, TypeError):
+        return jsonify({"error": "Amount must be a valid number"}), 400
     
-    if coin in portfolio:
-        portfolio[coin]['amount'] += amount
+    # === SQL: Check if coin already exists in portfolio ===
+    item = PortfolioItem.query.filter_by(coin=coin).first()
+    
+    if item:
+        item.amount += amount
     else:
-        portfolio[coin] = {
-            'amount': amount,
-            'buy_price': buy_price,
-            'added_at': datetime.now().isoformat()
-        }
+        new_item = PortfolioItem(coin=coin, amount=amount)
+        db.session.add(new_item)
     
-    return jsonify({
-        "status": "success",
-        "message": f"Added {amount} {coin.upper()} to portfolio",
-        "portfolio": portfolio
-    })
+    try:
+        db.session.commit()
+        return jsonify({
+            "status": "success",
+            "message": f"Added {amount} {coin.upper()} to persistent portfolio"
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/portfolio')
 def get_portfolio():
     """Get portfolio with current values."""
-    if not portfolio:
+    # === SQL: Get current portfolio from DATABASE ===
+    items = PortfolioItem.query.all()
+    
+    if not items:
         return jsonify({
             "message": "Portfolio is empty",
             "hint": "POST /api/portfolio/add with {coin, amount}"
         })
     
-    coin_ids = list(portfolio.keys())
+    coin_ids = [item.coin for item in items]
+    portfolio_map = {item.coin: item.amount for item in items}
     
+    # === API: Fetch current prices from CoinGecko (for valuation) ===
     try:
         response = requests.get(
             f"{COINGECKO_API}/simple/price",
@@ -301,17 +287,21 @@ def get_portfolio():
         total_usd = 0
         total_pln = 0
         
-        for coin, data in portfolio.items():
+        for coin, amount in portfolio_map.items():
             coin_prices = prices.get(coin, {})
-            value_usd = data['amount'] * coin_prices.get('usd', 0)
-            value_pln = data['amount'] * coin_prices.get('pln', 0)
+            current_usd = coin_prices.get('usd', 0)
+            current_pln = coin_prices.get('pln', 0)
+            
+            value_usd = amount * current_usd
+            value_pln = amount * current_pln
+            
             total_usd += value_usd
             total_pln += value_pln
             
             holdings.append({
                 "coin": coin,
-                "amount": data['amount'],
-                "current_price_usd": coin_prices.get('usd'),
+                "amount": amount,
+                "current_price_usd": current_usd,
                 "value_usd": round(value_usd, 2),
                 "value_pln": round(value_pln, 2)
             })
@@ -325,35 +315,56 @@ def get_portfolio():
             "timestamp": datetime.now().isoformat()
         })
     except requests.RequestException as e:
-        return jsonify({"error": "Failed to fetch prices", "details": str(e)}), 500
+        return jsonify({
+            "error": "Failed to fetch live prices", 
+            "holdings_only": portfolio_map
+        }), 500
 
 
 @app.route('/api/alerts', methods=['GET', 'POST'])
 def manage_alerts():
-    """Create or view price alerts."""
+    """Create or view price alerts (PERSISTENT)."""
     if request.method == 'POST':
         data = request.get_json()
         
         if not data or 'coin' not in data or 'target_price' not in data:
-            return jsonify({"error": "Required: coin, target_price, direction (above/below)"}), 400
+            return jsonify({"error": "Required: coin, target_price"}), 400
         
-        alert = {
-            "id": len(alerts) + 1,
-            "coin": data['coin'].lower(),
-            "target_price": float(data['target_price']),
-            "direction": data.get('direction', 'above'),
-            "created_at": datetime.now().isoformat(),
-            "triggered": False
-        }
-        alerts.append(alert)
+        try:
+            target_price = float(data['target_price'])
+            if target_price <= 0:
+                return jsonify({"error": "Target price must be greater than 0"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"error": "Target price must be a valid number"}), 400
         
-        return jsonify({
-            "status": "success",
-            "alert": alert
-        })
+        new_alert = PortfolioAlert(
+            coin=data['coin'].lower(),
+            target_price=target_price,
+            direction=data.get('direction', 'above')
+        )
+        
+        try:
+            db.session.add(new_alert)
+            db.session.commit()
+            return jsonify({
+                "status": "success",
+                "alert_id": new_alert.id,
+                "message": "Alert saved to database"
+            })
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
     
-    # GET - return all alerts
-    return jsonify({"alerts": alerts})
+    alerts_list = PortfolioAlert.query.all()
+    return jsonify({
+        "alerts": [{
+            "id": a.id, 
+            "coin": a.coin, 
+            "target_price": a.target_price, 
+            "direction": a.direction,
+            "created_at": a.created_at.isoformat()
+        } for a in alerts_list]
+    })
 
 
 if __name__ == '__main__':
