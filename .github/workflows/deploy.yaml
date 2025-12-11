@@ -12,6 +12,10 @@ env:
   REPOSITORY: docker-repo
   IMAGE: data-pipeline-api
 
+permissions:
+  contents: 'read'
+  id-token: 'write'
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
