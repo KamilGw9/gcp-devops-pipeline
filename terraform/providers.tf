@@ -1,6 +1,11 @@
 terraform {
   required_version = ">= 1.0.0"
   
+  backend "gcs" {
+    bucket = "gcp-devops-pipelien-kamil-tfstate"
+    prefix = "terraform/state"
+  }
+
   required_providers {
     google = {
       source  = "hashicorp/google"
