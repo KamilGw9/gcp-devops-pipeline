@@ -1,649 +1,204 @@
-# 🚀 Crypto Tracker API
+# Crypto Tracker API
 
-![Google Cloud](https://img.shields.io/badge/Google_Cloud-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white)
-![Terraform](https://img.shields.io/badge/Terraform-7B42BC?style=for-the-badge&logo=terraform&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![Flask](https://img.shields.io/badge/Flask-000000?style=for-the-badge&logo=flask&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)
-![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)
-![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-D71F00?style=for-the-badge&logo=sqlalchemy&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
-![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=for-the-badge&logo=kubernetes&logoColor=white)
-![NGINX](https://img.shields.io/badge/NGINX-009639?style=for-the-badge&logo=nginx&logoColor=white)
-![cert-manager](https://img.shields.io/badge/cert--manager-326CE5?style=for-the-badge&logo=kubernetes&logoColor=white)
-![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)
-![Helm](https://img.shields.io/badge/Helm-0F1689?style=for-the-badge&logo=helm&logoColor=white)
-![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white)
-![Grafana](https://img.shields.io/badge/Grafana-F46800?style=for-the-badge&logo=grafana&logoColor=white)
+[![CI Pipeline](https://github.com/KamilGw9/gcp-devops-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/KamilGw9/gcp-devops-pipeline/actions/workflows/ci.yml)
 
-A production-ready cryptocurrency tracking API demonstrating modern cloud-native practices on Google Cloud Platform. This project showcases real-time crypto price tracking, portfolio management, Infrastructure as Code, containerization, orchestration, monitoring, and CI/CD automation with enterprise-grade security.
+A small Flask API that fetches crypto prices from CoinGecko and stores a portfolio and price alerts in PostgreSQL. It runs on GKE, with infrastructure in Terraform and deployments through GitHub Actions.
 
----
+The app itself is deliberately simple. The point of the project is everything around it: infrastructure, networking, TLS, network policies, monitoring and CI/CD on GCP.
 
-## 📋 Table of Contents
-
-- [Architecture Overview](#-architecture-overview)
-- [Features](#-features)
-- [Tech Stack](#-tech-stack)
-- [Project Structure](#-project-structure)
-- [API Endpoints](#-api-endpoints)
-- [Environment Variables](#-environment-variables)
-- [Security](#-security)
-- [Monitoring](#-monitoring)
-- [Quick Start](#-quick-start)
-- [GitFlow Workflow](#-gitflow-workflow)
-- [CI/CD Pipeline](#-cicd-pipeline)
-- [License](#-license)
-- [Author](#-author)
-
----
-
-## 🏗 Architecture Overview
-
-The Crypto Tracker API is built with a modern microservices architecture:
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Internet / Users                           │
-└────────────────────────────┬────────────────────────────────────┘
-                             │
-                             ↓
-                    ┌────────────────┐
-                    │ NGINX Ingress  │  ← TLS/SSL (Let's Encrypt)
-                    │   Controller   │
-                    └────────┬───────┘
-                             │
-                             ↓
-              ┌──────────────────────────────┐
-              │   LoadBalancer Service       │
-              └──────────────┬───────────────┘
-                             │
-                    ┌────────┴────────┐
-                    │                 │
-            ┌───────▼──────┐  ┌──────▼───────┐
-            │ Flask App    │  │  Flask App   │  (2 replicas)
-            │ Pod 1        │  │  Pod 2       │
-            └──┬────────┬──┘  └──┬────────┬──┘
-               │        │        │        │
-        ┌──────▼─┐  ┌──▼────────▼──┐  ┌──▼─────────┐
-        │ Redis  │  │  PostgreSQL  │  │ CoinGecko  │
-        │ Cache  │  │  Database    │  │ API        │
-        └────────┘  └──────────────┘  └────────────┘
+            HTTPS (Let's Encrypt, cert-manager)
+                        │
+                ┌───────▼────────┐
+                │ NGINX Ingress  │
+                └───────┬────────┘
+                        │
+              ┌─────────▼──────────┐
+              │ data-pipeline-api  │  Deployment, 2 replicas (gunicorn)
+              └──┬───────┬──────┬──┘
+                 │       │      │
+          ┌──────▼─┐ ┌───▼────┐ └──► CoinGecko API
+          │ Redis  │ │Postgres│
+          │ cache  │ │        │
+          └────────┘ └────────┘
+
+   Prometheus + Grafana (kube-prometheus-stack), namespace: monitoring
 ```
 
-**Key Components:**
-- **Flask Application**: Python web API with SQLAlchemy ORM for data persistence
-- **PostgreSQL**: Primary database for portfolio data and price alerts
-- **Redis**: Caching layer for API responses (60s for prices, 5min for top 10)
-- **CoinGecko API**: Real-time cryptocurrency price data integration
-- **Kubernetes**: Container orchestration with 2 replicas for high availability
-- **NGINX Ingress**: Load balancing and SSL/TLS termination
-- **cert-manager**: Automatic SSL/TLS certificate management with Let's Encrypt
-- **Network Policies**: Zero-trust security with default deny and explicit allow rules
-- **Prometheus + Grafana**: Full observability and metrics visualization
+- **GKE**: zonal cluster in `europe-central2-a`, 2 × `e2-medium` nodes, VPC-native networking
+- **Terraform**: VPC, subnet, GKE cluster and node pool, Artifact Registry. State is kept in a GCS bucket.
+- **Redis**: caches CoinGecko responses (60 s for a single coin, 5 min for the top 10). If Redis is down, the app still works without the cache.
+- **PostgreSQL**: stores the portfolio and alerts (SQLAlchemy). Tables are created on startup.
+- **Redis and PostgreSQL** are installed from the Bitnami Helm charts, not Terraform.
 
----
-
-## ✨ Features
-
-### 🪙 Real-time Crypto Prices
-- Integration with CoinGecko API for live cryptocurrency data
-- Multi-currency support: USD, EUR, PLN
-- 24-hour price change tracking
-- Market capitalization data
-
-### 💼 Portfolio Management
-- Persistent storage with PostgreSQL backend
-- Add cryptocurrencies to your portfolio
-- Real-time portfolio valuation
-- Track holdings across multiple coins
-
-### 🔔 Price Alerts
-- Set target price notifications
-- Configure alerts for price movements (above/below thresholds)
-- Persistent alert storage
-
-### ⚡ Performance & Caching
-- Redis caching layer for optimal performance
-- 60-second cache for individual price data
-- 5-minute cache for top 10 cryptocurrencies
-- Reduced API calls and faster response times
-
-### 🔒 Enterprise Security
-- Network policies with default deny rules
-- TLS/SSL encryption with Let's Encrypt certificates
-- Kubernetes secrets for sensitive credentials
-- Resource limits to prevent resource exhaustion
-
-### 📊 Observability
-- Prometheus metrics endpoint
-- Grafana dashboards for visualization
-- Health checks with DB and Redis status
-- Request duration and rate tracking
-
----
-
-## 🛠 Tech Stack
-
-| Category | Technology |
-|----------|------------|
-| ☁️ **Cloud** | Google Cloud Platform (GKE, Artifact Registry, VPC) |
-| 🏗️ **IaC** | Terraform |
-| 🐍 **App** | Python 3.10, Flask |
-| 🗄️ **Database** | PostgreSQL, SQLAlchemy ORM |
-| ⚡ **Cache** | Redis |
-| 🐳 **Containerization** | Docker |
-| ☸️ **Orchestration** | Kubernetes |
-| 🌐 **Ingress** | NGINX Ingress Controller |
-| 🔐 **Certificates** | cert-manager, Let's Encrypt |
-| 📦 **Package Manager** | Helm |
-| 📊 **Monitoring** | Prometheus, Grafana |
-| 🔄 **CI/CD** | GitHub Actions |
-| 📝 **Version Control** | Git with GitFlow |
-
----
-
-## 📁 Project Structure
+## Repository layout
 
 ```
-├── app/                  # Flask application
-│   ├── main.py
-│   ├── test_app.py
-│   ├── Dockerfile
-│   └── requirements.txt
-├── terraform/            # Infrastructure as Code
-│   ├── main.tf
-│   ├── variables.tf
-│   ├── outputs.tf
-│   └── providers.tf
-├── k8s/                  # Kubernetes manifests
-│   ├── deployment.yaml
-│   ├── ingress.yaml              # NGINX Ingress with TLS
-│   ├── cluster-issuer.yaml       # cert-manager configuration
-│   └── network-policies/         # Security policies
-│       ├── app-policy.yaml
-│       ├── redis-policy.yaml
-│       └── default-deny.yaml
-├── .github/workflows/    # CI/CD pipelines
-│   ├── ci.yml            # Continuous Integration
-│   └── deploy.yaml       # Continuous Deployment
-└── MONITORING.md         # Monitoring documentation
+app/                      Flask app, tests, Dockerfile
+terraform/                GCP infrastructure
+k8s/
+  deployment.yaml         Deployment + Service
+  ingress.yaml            NGINX Ingress with TLS
+  cluster-issuer.yaml     cert-manager ClusterIssuer (Let's Encrypt)
+  network-policies/       default deny + allow rules for the app and Redis
+.github/workflows/
+  ci.yml                  tests on push / PR
+  deploy.yaml             build, push and deploy on push to main
+MONITORING.md             monitoring notes (in Polish)
 ```
 
----
+## API
 
-## 🔌 API Endpoints
+| Method | Path                  | Description                                   |
+|--------|-----------------------|-----------------------------------------------|
+| GET    | `/`                   | Service name and version                      |
+| GET    | `/health`             | DB and Redis status                           |
+| GET    | `/metrics`            | Prometheus metrics                            |
+| GET    | `/api/crypto/top10`   | Top 10 coins by market cap (USD)              |
+| GET    | `/api/crypto/<coin>`  | Price in USD/EUR/PLN, 24h change, market cap  |
+| GET    | `/api/portfolio`      | Holdings valued at current prices (USD, PLN)  |
+| POST   | `/api/portfolio/add`  | `{"coin": "bitcoin", "amount": 0.5}`          |
+| GET    | `/api/alerts`         | List alerts                                   |
+| POST   | `/api/alerts`         | `{"coin": "bitcoin", "target_price": 50000, "direction": "above"}` |
 
-The Crypto Tracker API provides the following endpoints:
+`<coin>` is a CoinGecko ID, for example `bitcoin` or `ethereum`.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | API information and version |
-| `GET` | `/health` | Health check (DB + Redis status) |
-| `GET` | `/metrics` | Prometheus metrics endpoint |
-| `GET` | `/api/crypto/top10` | Get top 10 cryptocurrencies by market cap |
-| `GET` | `/api/crypto/<coin>` | Get current price for specific cryptocurrency |
-| `POST` | `/api/portfolio/add` | Add cryptocurrency to portfolio |
-| `GET` | `/api/portfolio` | Get portfolio with current valuations |
-| `GET` | `/api/alerts` | View all price alerts |
-| `POST` | `/api/alerts` | Create new price alert |
-
-### Example Requests
-
-**Get API Info:**
-```bash
-curl https://34-116-189-129.nip.io/
-```
-
-**Health Check:**
-```bash
-curl https://34-116-189-129.nip.io/health
-```
-
-**Get Top 10 Cryptocurrencies:**
-```bash
-curl https://34-116-189-129.nip.io/api/crypto/top10
-```
-
-**Get Bitcoin Price:**
 ```bash
 curl https://34-116-189-129.nip.io/api/crypto/bitcoin
-```
 
-**Add to Portfolio:**
-```bash
 curl -X POST https://34-116-189-129.nip.io/api/portfolio/add \
   -H "Content-Type: application/json" \
   -d '{"coin": "bitcoin", "amount": 0.5}'
 ```
 
-**View Portfolio:**
-```bash
-curl https://34-116-189-129.nip.io/api/portfolio
-```
+Alerts are only stored for now. Nothing checks them against current prices yet.
 
-**Create Price Alert:**
-```bash
-curl -X POST https://34-116-189-129.nip.io/api/alerts \
-  -H "Content-Type: application/json" \
-  -d '{"coin": "bitcoin", "target_price": 50000, "direction": "above"}'
-```
+## Configuration
 
-**View All Alerts:**
-```bash
-curl https://34-116-189-129.nip.io/api/alerts
-```
+| Variable         | Default               | Notes                                    |
+|------------------|-----------------------|------------------------------------------|
+| `DB_HOST`        | `postgres-postgresql` |                                          |
+| `DB_USER`        | `postgres`            | from `postgres-secret` in the cluster    |
+| `DB_PASSWORD`    | `postgres`            | from `postgres-secret` in the cluster    |
+| `DB_NAME`        | `postgres`            |                                          |
+| `DATABASE_URL`   | built from the above  | overrides the `DB_*` variables           |
+| `REDIS_HOST`     | `redis-master`        |                                          |
+| `REDIS_PORT`     | `6379`                |                                          |
+| `REDIS_PASSWORD` | empty                 | from `redis-secret` in the cluster       |
+| `APP_VERSION`    | `2.1.0`               | returned by `/`                          |
+| `SKIP_DB_INIT`   | unset                 | `true` skips `create_all()` (used in tests) |
 
----
-
-## 🔐 Environment Variables
-
-The application requires the following environment variables:
-
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `APP_VERSION` | Application version | `2.1.0` | No |
-| `REDIS_HOST` | Redis server hostname | `redis-master` | Yes |
-| `REDIS_PORT` | Redis server port | `6379` | No |
-| `REDIS_PASSWORD` | Redis authentication password | - | Yes (in production) |
-| `DB_HOST` | PostgreSQL server hostname | `postgres-postgresql` | Yes |
-| `DB_USER` | PostgreSQL username | `postgres` | Yes |
-| `DB_PASSWORD` | PostgreSQL password | - | Yes |
-| `DB_NAME` | PostgreSQL database name | `postgres` | Yes |
-| `SKIP_DB_INIT` | Skip automatic table creation | `false` | No |
-
-### Kubernetes Secrets
-
-Sensitive credentials are stored as Kubernetes secrets:
+## Running locally
 
 ```bash
-# Create Redis secret
-kubectl create secret generic redis-secret \
-  --from-literal=password=YOUR_REDIS_PASSWORD
+docker run -d --name postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:14
+docker run -d --name redis -p 6379:6379 redis:7
 
-# Create PostgreSQL secret
-kubectl create secret generic postgres-secret \
-  --from-literal=username=postgres \
-  --from-literal=password=YOUR_POSTGRES_PASSWORD
-```
-
----
-
-## 🔒 Security
-
-This project implements enterprise-grade security practices:
-
-### Network Policies
-- **Default Deny**: All ingress traffic denied by default
-- **App Policy**: Explicit allow rules for application traffic
-- **Redis Policy**: Restricted access to Redis from application pods only
-- **PostgreSQL Policy**: Database access restricted to application pods
-
-### TLS/SSL Encryption
-- NGINX Ingress Controller with TLS termination
-- Let's Encrypt certificates via cert-manager
-- Automatic certificate renewal
-- HTTPS enforcement with automatic redirect
-
-### Secrets Management
-- Kubernetes secrets for sensitive credentials
-- Redis and PostgreSQL passwords stored securely
-- No hardcoded credentials in code or configuration
-
-### Resource Limits
-- Memory limits: 128Mi (request) to 256Mi (limit)
-- CPU limits: 100m (request) to 200m (limit)
-- Prevents resource exhaustion attacks
-- Ensures fair resource allocation
-
-### Health Probes
-- **Liveness Probe**: Automatically restarts unhealthy pods
-- **Readiness Probe**: Ensures traffic only to ready pods
-- Both probes check `/health` endpoint with DB and Redis status
-
----
-
-## 📊 Monitoring
-
-This project includes a complete monitoring stack with Prometheus and Grafana.
-
-### Components
-
-| Component | Purpose |
-|-----------|---------|
-| **Prometheus** | Metrics collection and storage from application and Kubernetes cluster |
-| **Grafana** | Visualization and dashboards for metrics analysis |
-| **kube-prometheus-stack** | Complete monitoring solution with pre-configured dashboards |
-
-### Application Metrics
-
-The application exposes the following Prometheus metrics at `/metrics`:
-
-- `app_requests_total{method, endpoint}` - Total number of requests by HTTP method and endpoint
-- `app_request_duration_seconds` - Request duration histogram for performance tracking
-
-### Deployment
-
-The monitoring stack is deployed using the official Prometheus Community Helm chart:
-
-```bash
-# Add Prometheus Community Helm repository
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
-
-# Deploy monitoring stack
-helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
-  --namespace monitoring \
-  --create-namespace \
-  --set grafana.adminPassword="YOUR_SECURE_PASSWORD" \
-  --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false
-```
-
-### Access Monitoring Services
-
-```bash
-# Get Prometheus service
-kubectl get svc -n monitoring | grep prometheus
-
-# Get Grafana service  
-kubectl get svc -n monitoring | grep grafana
-
-# Port forward Grafana to access locally
-kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
-# Access at http://localhost:3000 (username: admin)
-```
-
-📖 For detailed monitoring documentation, see [MONITORING.md](MONITORING.md)
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Google Cloud Platform account
-- [gcloud CLI](https://cloud.google.com/sdk/docs/install) installed and configured
-- [Terraform](https://www.terraform.io/downloads) >= 1.0.0
-- [Docker](https://docs.docker.com/get-docker/) installed
-- [kubectl](https://kubernetes.io/docs/tasks/tools/) installed
-- [Helm](https://helm.sh/docs/intro/install/) >= 3.0 installed
-
-### Infrastructure Deployment
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/KamilGw9/gcp-devops-pipeline.git
-   cd gcp-devops-pipeline
-   ```
-
-2. **Set up GCP authentication:**
-   ```bash
-   gcloud auth login
-   gcloud config set project YOUR_PROJECT_ID
-   ```
-
-3. **Deploy infrastructure with Terraform:**
-   ```bash
-   cd terraform
-   terraform init
-   terraform plan -var="project_id=YOUR_PROJECT_ID"
-   terraform apply -var="project_id=YOUR_PROJECT_ID"
-   ```
-
-4. **Configure kubectl:**
-   ```bash
-   gcloud container clusters get-credentials devops-cluster --zone europe-central2-a
-   ```
-
-### Dependencies Setup
-
-#### 1. Install cert-manager (for TLS certificates)
-
-```bash
-# Install cert-manager
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
-
-# Wait for cert-manager to be ready
-kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=300s
-
-# Apply cluster issuer for Let's Encrypt
-kubectl apply -f k8s/cluster-issuer.yaml
-```
-
-#### 2. Install NGINX Ingress Controller
-
-```bash
-# Add NGINX Ingress Helm repository
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm repo update
-
-# Install NGINX Ingress Controller
-helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
-  --namespace ingress-nginx \
-  --create-namespace \
-  --set controller.service.type=LoadBalancer
-```
-
-#### 3. Deploy PostgreSQL
-
-```bash
-# Add Bitnami Helm repository
-helm repo add bitnami https://charts.bitnami.com/bitnami
-helm repo update
-
-# Install PostgreSQL
-helm upgrade --install postgres bitnami/postgresql \
-  --namespace default \
-  --set auth.username=postgres \
-  --set auth.password=YOUR_POSTGRES_PASSWORD \
-  --set auth.database=postgres
-
-# Create PostgreSQL secret for application
-kubectl create secret generic postgres-secret \
-  --from-literal=username=postgres \
-  --from-literal=password=YOUR_POSTGRES_PASSWORD
-```
-
-#### 4. Deploy Redis
-
-```bash
-# Install Redis
-helm upgrade --install redis bitnami/redis \
-  --namespace default \
-  --set auth.password=YOUR_REDIS_PASSWORD
-
-# Create Redis secret for application
-kubectl create secret generic redis-secret \
-  --from-literal=password=YOUR_REDIS_PASSWORD
-```
-
-### Application Deployment
-
-1. **Build the Docker image:**
-   ```bash
-   cd app
-   docker build -t crypto-tracker-api:v1 .
-   ```
-
-2. **Push to Artifact Registry:**
-   ```bash
-   gcloud auth configure-docker europe-central2-docker.pkg.dev
-   docker tag crypto-tracker-api:v1 europe-central2-docker.pkg.dev/YOUR_PROJECT_ID/docker-repo/data-pipeline-api:latest
-   docker push europe-central2-docker.pkg.dev/YOUR_PROJECT_ID/docker-repo/data-pipeline-api:latest
-   ```
-
-3. **Apply Network Policies:**
-   ```bash
-   kubectl apply -f k8s/network-policies/
-   ```
-
-4. **Deploy to Kubernetes:**
-   ```bash
-   kubectl apply -f k8s/deployment.yaml
-   kubectl apply -f k8s/ingress.yaml
-   ```
-
-5. **Deploy Monitoring Stack:**
-   ```bash
-   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-   helm repo update
-   
-   helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
-     --namespace monitoring \
-     --create-namespace \
-     --set grafana.adminPassword="YOUR_GRAFANA_PASSWORD" \
-     --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false
-   ```
-
-6. **Verify deployment:**
-   ```bash
-   # Check application pods
-   kubectl get pods -l app=data-pipeline-api
-   
-   # Check services
-   kubectl get svc
-   
-   # Check ingress
-   kubectl get ingress
-   
-   # Get Ingress external IP
-   kubectl get ingress crypto-tracker-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-   ```
-
-### Local Development
-
-Run the application locally with dependencies:
-
-```bash
-# Start PostgreSQL (using Docker)
-docker run --name postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres:14
-
-# Start Redis (using Docker)
-docker run --name redis -p 6379:6379 -d redis:7
-
-# Install Python dependencies
 cd app
 pip install -r requirements.txt
-
-# Set environment variables
-export DB_HOST=localhost
-export DB_USER=postgres
-export DB_PASSWORD=postgres
-export DB_NAME=postgres
-export REDIS_HOST=localhost
-export REDIS_PORT=6379
-export REDIS_PASSWORD=""
-
-# Run the application
-python main.py
+DB_HOST=localhost REDIS_HOST=localhost python main.py   # http://localhost:8080
 ```
 
-Run tests:
+Tests use in-memory SQLite, so they don't need Postgres or Redis. Two of them call the real CoinGecko API.
+
 ```bash
-cd app
-python -m pytest test_app.py -v
+cd app && python -m pytest -v
 ```
 
----
+## Deploying from scratch
 
-## 🌿 GitFlow Workflow
+Requirements: gcloud, Terraform >= 1.0, kubectl, Helm 3, Docker.
 
-This project follows the GitFlow branching strategy:
+**1. Infrastructure**
 
-| Branch | Purpose |
-|--------|---------|
-| `main` | Production-ready code. Protected branch with required reviews. |
-| `develop` | Integration branch for features. Latest development changes. |
-| `feature/*` | Feature branches for new development work. |
+The GCS bucket for the Terraform state (`terraform/providers.tf`) has to exist before `init`.
 
-### Workflow
-
-1. Create a feature branch from `develop`:
-   ```bash
-   git checkout develop
-   git checkout -b feature/my-new-feature
-   ```
-
-2. Make changes and commit:
-   ```bash
-   git add .
-   git commit -m "feat: add new feature"
-   ```
-
-3. Push and create a Pull Request to `develop`:
-   ```bash
-   git push origin feature/my-new-feature
-   ```
-
-4. After review and merge to `develop`, create PR to `main` for release.
-
----
-
-## 🔄 CI/CD Pipeline
-
-The project uses GitHub Actions for automated CI/CD with two workflows:
-
-### CI Workflow (`.github/workflows/ci.yml`)
-
-**Triggers:**
-- **Push** to `main`, `develop`, and `feature/*` branches
-- **Pull Requests** to `main` and `develop` branches
-
-**Steps:**
-1. **Checkout Code** - Fetches the latest code from the repository
-2. **Setup Python** - Configures Python 3.10 environment
-3. **Install Dependencies** - Installs required Python packages
-4. **Run Tests** - Executes pytest with verbose output
-
-### Deploy Workflow (`.github/workflows/deploy.yaml`)
-
-**Triggers:**
-- Push to `main` branch
-
-**Steps:**
-1. **Build Docker Image** - Creates container image
-2. **Push to Artifact Registry** - Uploads image to GCP
-3. **Deploy to GKE** - Updates Kubernetes deployment
-4. **Deploy Monitoring** - Installs/updates Prometheus and Grafana via Helm
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
-```
-MIT License
-
-Copyright (c) 2025
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+```bash
+cd terraform
+terraform init
+terraform apply -var="project_id=YOUR_PROJECT_ID"
+gcloud container clusters get-credentials devops-cluster --zone europe-central2-a
 ```
 
----
+**2. Cluster add-ons**
 
-## 👤 Author
+```bash
+# cert-manager
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+kubectl apply -f k8s/cluster-issuer.yaml
 
-**Kamil Gw**
+# NGINX Ingress
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+  -n ingress-nginx --create-namespace
 
-- GitHub: [@KamilGw9](https://github.com/KamilGw9)
+# PostgreSQL and Redis
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm upgrade --install postgres bitnami/postgresql \
+  --set auth.password=CHANGE_ME --set auth.database=postgres
+helm upgrade --install redis bitnami/redis --set auth.password=CHANGE_ME
 
----
+kubectl create secret generic postgres-secret \
+  --from-literal=username=postgres --from-literal=password=CHANGE_ME
+kubectl create secret generic redis-secret --from-literal=password=CHANGE_ME
+```
 
-⭐ Star this repository if you find it helpful!
+**3. Application**
+
+```bash
+kubectl apply -f k8s/network-policies/
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/ingress.yaml
+```
+
+The hostname in `k8s/ingress.yaml` is a nip.io address built from the ingress controller's external IP. Update it for a new cluster.
+
+After this, pushing to `main` builds and deploys the app.
+
+## CI/CD
+
+**`ci.yml`** runs on pushes to `main`, `develop` and `feature/*`, and on PRs to `main` and `develop`. It installs dependencies and runs pytest.
+
+**`deploy.yaml`** runs on push to `main`:
+
+1. Authenticates to GCP with Workload Identity Federation, so no service account key is stored in GitHub.
+2. Builds the image and pushes it to Artifact Registry, tagged with the commit SHA and `latest`.
+3. Installs or updates `kube-prometheus-stack` with Helm. The Grafana password comes from the `GRAFANA_PASSWORD` secret.
+4. Runs `kubectl set image` and waits for the rollout to finish.
+
+Branching: feature branches go into `develop`, and `develop` is merged into `main` for a release.
+
+## Security
+
+- `default-deny-all` blocks all ingress and egress in the `default` namespace.
+- The app accepts traffic only from the `ingress-nginx` and `monitoring` namespaces. It can connect out only to Redis, Postgres, DNS, and public IPs on port 443.
+- Redis accepts connections only from the app pods.
+- TLS is terminated at the ingress with a Let's Encrypt certificate, and HTTP redirects to HTTPS.
+- The container runs as a non-root user. CPU and memory requests and limits are set.
+- Database and Redis passwords are stored in Kubernetes secrets.
+
+## Monitoring
+
+`kube-prometheus-stack` runs in the `monitoring` namespace. The app exposes `/metrics` through `prometheus_client`. Pods have `prometheus.io/*` annotations, but no ServiceMonitor is defined yet.
+
+```bash
+kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80   # login: admin
+```
+
+More details are in [MONITORING.md](MONITORING.md).
+
+## Known issues / TODO
+
+- Postgres has no NetworkPolicy of its own. With `default-deny-all` in place, it will block traffic until one is added.
+- `app_requests_total` is only incremented on `/api/crypto/<coin>`, and `app_request_duration_seconds` is never recorded.
+- The Workload Identity pool, provider and service account were created manually. They should be moved into Terraform.
+- The deploy uses `:latest` instead of the SHA tag, so a rollback means retagging the image.
+- CI runs Python 3.10, but the Docker image uses 3.11.
+- No authentication. The portfolio is shared by everyone who calls the API.
+- The alerts don't trigger anything yet.
+
+## Author
+
+Kamil Gw · [@KamilGw9](https://github.com/KamilGw9)
